@@ -4,6 +4,7 @@ import json
 from feh_skill import Skill, ALL_SKILLS
 from feh_util import round_num
 from feh_weapon import Weapon, ALL_WEAPONS
+from feh_map import Point
 
 from feh_special import Special
 from vcbenchmark import VCBenchmark
@@ -19,6 +20,8 @@ statGrowths = [[4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26],
               [8, 10, 13, 15, 17, 19, 22, 24, 26, 28, 30, 33]
               ]
 
+stat_names =["hp", "atk", "spd", "def", "res"]
+
 verbose = True
 
 
@@ -28,6 +31,8 @@ class Unit(object):
             raise Exception("%s not in unit data" % unit_name)
 
         self.name = unit_name
+
+        self.location = Point()
 
         self.weapon = None
         self.special = None
@@ -267,7 +272,6 @@ class Unit(object):
 
         # how many units have been merged into this one
         if self.merged > 0:
-            stat_names =["hp", "atk", "spd", "def", "res"]
             merge_bonus_order =["hp", "atk", "spd", "def", "res"]
 
             # sort stats from highest to lowest with insertion sort haha
@@ -337,6 +341,21 @@ class Unit(object):
 
     def is_alive(self):
         return self.stat_current["hp"] > 0
+
+    def add_mod_with_turns(self,mod,turns=2):
+        """
+        Add threatens and seals.
+        :param mod: 
+        :param turns: 
+        :return: 
+        """
+        tmod = mod.copy()
+        tmod["turns"] = turns
+
+        for stat, value in tmod.items():
+            if stat in stat_names:
+                self.stat_current[stat] += value
+        self.round_mods.append(tmod)
 
     def add_temp_mod(self,mod):
         # add to temp buffs
@@ -444,6 +463,21 @@ class Unit(object):
         elif heal > 0:
             self.stat_current["hp"] = min(oldhp - poison - recoil + heal, self.stat_total["hp"])
 
+    def start_turn(self):
+        # start of turn buffs and threatens
+
+        pass
+
+    def end_turn(self):
+        # subtract the number of turns from all round_mods.
+        for mod in self.round_mods:
+            mod["turns"] -= 1
+            if mod["turns"] <= 0:
+                for stat, value in mod.items():
+                    if stat != "turns":
+                        self.stat_current[stat] -= value
+        if verbose:
+            print("%s: %s" % (self.name, self.stat_current))
 
     def _single_combat(self,enemy, initiator, second_brave_attack = False):
         """
@@ -584,7 +618,7 @@ class Unit(object):
             enemy.equipped_special.curr_cooldown -= 1
 
         # we only brave weapon if we're the initiator
-        if initiator and self.equipped_weapon.brave and not second_brave_attack and enemy.stat_current["hp"] > 0:
+        if initiator and self.equipped_weapon.brave and not second_brave_attack and enemy.is_alive():
             self._single_combat(enemy,initiator, True)
 
     def attack_unit(self,enemy):
@@ -690,11 +724,11 @@ class Unit(object):
                 vantage = True
 
         # attacker initiates
-        if self.stat_current["hp"] > 0:
+        if self.is_alive():
             self._single_combat(enemy, True, False )
 
         # desperation
-        if desperation_passive and self.stat_current["hp"] > 0 and enemy.stat_current["hp"] > 0 and can_follow_up:
+        if desperation_passive and self.is_alive() and enemy.is_alive() and can_follow_up:
             if not def_desperation_passive and not def_breaker_passive and not def_wary_passive:
                 if breaker_passive:
                     desperation = True
@@ -723,7 +757,7 @@ class Unit(object):
                     self._single_combat(enemy, True, False)
 
         # defender counter attack
-        if self.stat_current["hp"] > 0 and enemy.stat_current["hp"] > 0:
+        if self.is_alive() and enemy.is_alive():
             # !vantage
             if not def_vantage_passive:
                 if enemy.in_range_of(self) and enemy_can_counter:
@@ -737,7 +771,7 @@ class Unit(object):
             if self.has_no_follow():
                 pass
             # if attacker alive
-            if self.stat_current["hp"] > 0:
+            if self.is_alive():
                 # attacker wary?
                 if wary_passive:
                     if def_breaker_passive and enemy_can_counter and enemy_outspeed:
@@ -771,7 +805,7 @@ class Unit(object):
                     if def_riposte_passive and enemy_outspeed:
                         if can_follow_up:
                             self._single_combat(enemy, True, False)
-                        if enemy.stat_current["hp"] > 0:
+                        if enemy.is_alive():
                             enemy._single_combat(self,False, False)
                     elif can_follow_up:
                         self._single_combat(enemy, True, False)
@@ -780,13 +814,13 @@ class Unit(object):
                     if brash_passive and outspeed and can_follow_up:
                         self._single_combat(enemy, True, False)
                         brashact = True
-                    if enemy_can_counter and enemy.stat_current["hp"] > 0:
+                    if enemy_can_counter and enemy.is_alive():
                         if brashact or desperation:
                             enemy._single_combat(self, False, False)
                         else:
                             # it's different? yes?
                             enemy._single_combat(self, False, False)
-                    elif can_follow_up and enemy.stat_current["hp"] > 0:
+                    elif can_follow_up and enemy.is_alive():
                         pass
                 # regular follow ups
                 else:
@@ -796,18 +830,18 @@ class Unit(object):
                         enemy._single_combat(self, False, False)
                         defend_follow = True
                     # brash
-                    if brash_passive and can_follow_up and self.stat_current["hp"] > 0:
+                    if brash_passive and can_follow_up and self.is_alive():
                         self._single_combat(enemy, True, False)
                         can_follow_up = False
 
                     # regular follow up
-                    if can_follow_up and outspeed and self.stat_current["hp"] > 0 and enemy.stat_current["hp"] > 0:
+                    if can_follow_up and outspeed and self.is_alive() and enemy.is_alive():
                         self._single_combat(enemy, True, False)
-                    elif not defend_follow and enemy_outspeed and enemy_can_counter and self.stat_current["hp"] > 0 and enemy.stat_current["hp"] > 0:
+                    elif not defend_follow and enemy_outspeed and enemy_can_counter and self.is_alive() and enemy.is_alive():
                         enemy._single_combat(self, False, True)
                         defend_follow = True
                     # riposte
-                    if def_riposte_passive and enemy.stat_current["hp"] > 0 and not defend_follow:
+                    if def_riposte_passive and enemy.is_alive() and not defend_follow:
                         enemy._single_combat(self, False, False)
 
         after_heal = 0
@@ -816,36 +850,72 @@ class Unit(object):
         recoil = 0
         def_recoil = 0
         # after combat healing
-        if self.stat_current["hp"] > 0:
+        if self.is_alive():
             for holder in self.mod_holders():
                 if holder.initiate_heal:
                     after_heal += holder.initiate_heal
         # poison
-        if enemy.stat_current["hp"] > 0:
+        if enemy.is_alive():
             for holder in self.mod_holders():
                 if holder.poison:
                     poison += holder.poison
                 if holder.initiate_poison:
                     poison += holder.initiate_poison
-        if self.stat_current["hp"] > 0 and def_attacks:
+        if self.is_alive() and def_attacks:
             for holder in enemy.mod_holders():
                 if holder.poison:
                     def_poison += holder.poison
 
         # recoil
-        if self.stat_current["hp"] > 0:
+        if self.is_alive():
             for holder in self.mod_holders():
                 if holder.recoil_dmg:
                     recoil += holder.recoil_dmg
-        if enemy.stat_current["hp"] > 0:
+        if enemy.is_alive():
             for holder in enemy.mod_holders():
                 if holder.recoil_dmg:
                     def_recoil += holder.recoil_dmg
         self._after_combat_effects(poison, recoil, after_heal)
         enemy._after_combat_effects(def_poison, def_recoil, 0)
 
+        # seals
+        if self.is_alive() and enemy.is_alive():
+            for holder in self.mod_holders():
+                if holder.seal:
+                    if verbose:
+                        print("%s seals %s with %s" % (self.name,enemy.name,holder.seal))
+                    enemy.add_mod_with_turns(holder.seal)
+                if holder.target_seal and holder.target_seal["target"] == enemy.move_type:
+                    if verbose:
+                        print("%s seals %s with %s" % (self.name,enemy.name,holder.seal))
+                    enemy.add_mod_with_turns(holder.target_seal)
+
+            for holder in enemy.mod_holders():
+                if holder.seal:
+                    if verbose:
+                        print("%s seals %s with %s" % (enemy.name,self.name,holder.seal))
+                    self.add_mod_with_turns(holder.seal)
+                if holder.target_seal and holder.target_seal["target"] == self.move_type:
+                    if verbose:
+                        print("%s seals %s with %s" % (enemy.name,self.name,holder.seal))
+                    self.add_mod_with_turns(holder.target_seal)
+
+
+
         self.remove_all_temp_mods()
         enemy.remove_all_temp_mods()
+
+    def threaten(self, enemy, ignore_range=False):
+        for holder in self.mod_holders():
+            if holder.threaten:
+                if ignore_range:
+                    if verbose:
+                        print("%s threatens %s for %s" % (self.name, enemy.name, holder.threaten))
+                    enemy.add_mod_with_turns(holder.threaten)
+                else:
+                    # if self.location.distance(enemy) < holder.threaten.range:
+                    #     enemy.add_mod_with_turns(holder.threaten)
+                    pass
 
     def assist_unit(self,ally):
         pass
@@ -862,14 +932,21 @@ def fight_to_death(attacker, defender):
     defender.init_total_stats()
 
     rounds = 0
+    units = [attacker,defender]
     while attacker.is_alive() and defender.is_alive() and rounds < 99:
         if verbose:
             print("===============")
+        attacker.threaten(defender,ignore_range=True)
         attacker.attack_unit(defender)
+        attacker.end_turn()
+        defender.end_turn()
         if defender.is_alive():
             if verbose:
                 print("===============")
+            defender.threaten(attacker,ignore_range=True)
             defender.attack_unit(attacker)
+            attacker.end_turn()
+            defender.end_turn()
         rounds +=1
     if attacker.is_alive() and defender.is_alive():
         #print("Draws %s" % defender.name)
@@ -890,8 +967,8 @@ if __name__ == "__main__":
     timer = VCBenchmark()
     timer.start("TOTAL")
 
-    attacker = Unit.max_from_base("Jeorge")
-    defender = Unit.max_from_base("Setsuna")
+    attacker = Unit.max_from_base("Sharena")
+    defender = Unit.max_from_base("Zephiel")
     fight_to_death(attacker,defender)
 
     # attackers = [Unit.max_from_base(name) for name in unit_data if name != "Custom"]

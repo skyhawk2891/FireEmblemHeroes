@@ -14,6 +14,19 @@ terrain_ascii = {"0": ".",
 
 inverted_terrain_ascii = {v:k for k,v in terrain_ascii.items()}
 
+class Point(object):
+    def __init__(self,x=0,y=0):
+        self.x = x
+        self.y = y
+
+    @staticmethod
+    def from_list(l):
+        p = Point(l[0],l[1])
+        return p
+
+    def distance(self,p):
+        return ((p.x - self.x) ** 2 + (p.y - self.y) ** 2) ** .5
+
 class Terrain(object):
     land = "0"
     wall = "1"
