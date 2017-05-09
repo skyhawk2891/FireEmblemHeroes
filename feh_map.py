@@ -9,7 +9,8 @@ terrain_ascii = {"0": ".",
               "3": "w",
               "4": "M",
               "5": "_",
-              "6": "-"
+              "6": "-",
+              "7": "u",
               }
 
 inverted_terrain_ascii = {v:k for k,v in terrain_ascii.items()}
@@ -35,6 +36,7 @@ class Terrain(object):
     mountain = "4"
     breakable_wall_1 = "5"
     breakable_wall_2 = "6"
+    garrison = "7"
 
 
 
@@ -44,6 +46,14 @@ class Terrain(object):
     def __init__(self, terrain_type):
         self.hits_to_break = 0
         self.terrain_type = terrain_type
+
+        self.type = None
+        self.infantry_passable = None
+        self.horse_passable = None
+        self.flier_passable = None
+        self.stat_mod_percent = None
+        self.breakable = 0
+        self.move_cost = 0
         self.set_type(self.terrain_type)
 
     @staticmethod
@@ -60,6 +70,8 @@ class Terrain(object):
         if self.breakable:
             self.hits_to_break = self.breakable
 
+    def buffs(self):
+        return self.stat_mod_percent
 
     def is_infantry_passable(self):
         return self.infantry_passable and not self.hits_to_break
@@ -76,9 +88,6 @@ class Terrain(object):
     def hit(self):
         if self.hits_to_break > 0:
             self.hits_to_break -= 1
-
-    def move_cost(self):
-        return self.move_cost
 
 
 sample_map_str ="""T..TT.
